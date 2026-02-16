@@ -1,0 +1,17 @@
+schema_version = "1.0.0"
+
+id = "hychar_customizer"
+version = "1.0.0"
+name = "HyChar"
+tagline = "Spawn, Customize, and Bake Rigged Characters from Hytale!"
+maintainer = "Drew Lowry"
+type = "add-on"
+
+license = ["GPL-2.0-or-later"]
+
+platforms = ["windows-x64", "macos-arm64", "macos-x64", "linux-x64"]
+blender_version_min = "5.0.0"
+
+website = "https://www.youtube.com/@DrewLowry1871/featured"
+
+icon = "icon.png"
