@@ -1,7 +1,7 @@
 # HyChar
   Spawn, Customize, and Bake Rigged Characters from Hytale!
 
-🛠 Installation (Blender 5.0+)
+🛠 Installation (Blender 5.0+) 
   This addon uses the modern Blender Extension system.
   Drag and drop .zip file into your Blender window & confirm, OR
   Open Blender and go to Edit > Preferences.
