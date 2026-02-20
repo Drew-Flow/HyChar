@@ -1,15 +1,39 @@
 import bpy
 import os
+if "bake_logic" in locals():
+    import importlib
+    importlib.reload(bake_logic)
+else:
+    from . import bake_logic
 
 ADDON_DIR = os.path.dirname(__file__)
 LIB_PATH = os.path.join(ADDON_DIR, "resources", "CharLibrary.blend")
 
-# --- HELPER FUNCTIONS ---
+# --- GET GN OBJ ---
 def get_obj1():
-    return next((o for o in bpy.data.objects if o.name.startswith("CharCust_1")), None)
-
+    return next((o for o in bpy.data.objects if o.name.startswith("Beard_GN")), None)
 def get_obj2():
-    return next((o for o in bpy.data.objects if o.name.startswith("CharCust_2")), None)
+    return next((o for o in bpy.data.objects if o.name.startswith("Cape_GN")), None)
+def get_obj3():
+    return next((o for o in bpy.data.objects if o.name.startswith("Earrings_GN")), None)
+def get_obj4():
+    return next((o for o in bpy.data.objects if o.name.startswith("FaceAcc_GN")), None)
+def get_obj5():
+    return next((o for o in bpy.data.objects if o.name.startswith("Gloves_GN")), None)
+def get_obj6():
+    return next((o for o in bpy.data.objects if o.name.startswith("Hair_GN")), None)
+def get_obj7():
+    return next((o for o in bpy.data.objects if o.name.startswith("HeadAcc_GN")), None)
+def get_obj8():
+    return next((o for o in bpy.data.objects if o.name.startswith("Overpants_GN")), None)
+def get_obj9():
+    return next((o for o in bpy.data.objects if o.name.startswith("Overshirt_GN")), None)
+def get_obj10():
+    return next((o for o in bpy.data.objects if o.name.startswith("Pants_GN")), None)
+def get_obj11():
+    return next((o for o in bpy.data.objects if o.name.startswith("Shoes_GN")), None)
+def get_obj12():
+    return next((o for o in bpy.data.objects if o.name.startswith("Undershirt_GN")), None)
 
 # --- 1. SPAWN OPERATOR ---
 class HYCHAR_OT_spawn_character(bpy.types.Operator):
@@ -36,6 +60,15 @@ class HYCHAR_OT_spawn_character(bpy.types.Operator):
                 context.scene.collection.children.link(coll)
                 
         self.report({'INFO'}, "Character Spawned!")
+        
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                # Loop through all spaces in the 3D area (usually just one, but safer)
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        # Stay in RENDERED if they are already there
+                        if space.shading.type in {'SOLID', 'WIREFRAME'}:
+                            space.shading.type = 'MATERIAL'
         return {'FINISHED'}
 
 # --- 2. BAKE OPERATOR ---
@@ -84,7 +117,7 @@ class MESH_OT_clone_factory_final(bpy.types.Operator):
             self.report({'ERROR'}, "Failed to clone the rig correctly.")
             return {'CANCELLED'}
             
-        new_rig.name = f"{PREFIX}_{RIG_NAME}_BAKED"
+        new_rig.name = f"{PREFIX}_{RIG_NAME}"
 
         new_col = bpy.data.collections.new(f"{PREFIX}_Collection")
         context.scene.collection.children.link(new_col)
@@ -115,7 +148,6 @@ class MESH_OT_clone_factory_final(bpy.types.Operator):
                     widget_map[widget_obj.name] = new_widget
                 bone.custom_shape = widget_map[widget_obj.name]
                 
-        target_mats = ["Skin", "Skin 2", "Earrings"]
         material_map = {} 
 
         for obj in copies:
@@ -131,15 +163,21 @@ class MESH_OT_clone_factory_final(bpy.types.Operator):
                     try: bpy.ops.object.modifier_apply(modifier=m_name)
                     except: pass
                 
+                # 2. Universal Material Prefixing
                 for slot in obj.material_slots:
                     if slot.material:
-                        base_mat_name = slot.material.name.split(".")[0]
-                        if base_mat_name in target_mats:
-                            if base_mat_name not in material_map:
-                                new_mat = slot.material.copy()
-                                new_mat.name = f"{PREFIX}_{base_mat_name}"
-                                material_map[base_mat_name] = new_mat
-                            slot.material = material_map[base_mat_name]
+                        orig_mat = slot.material
+                        
+                        # Check if we already handled this material for another object 
+                        # or another slot on the Body
+                        if orig_mat not in material_map:
+                            new_mat = orig_mat.copy()
+                            # Apply the user's custom prefix from the UI
+                            new_mat.name = f"{PREFIX}_{orig_mat.name}"
+                            material_map[orig_mat] = new_mat
+                        
+                        # Assign the shared unique version
+                        slot.material = material_map[orig_mat]
                 
                 arm_mod = next((m for m in obj.modifiers if m.type == 'ARMATURE'), None)
                 if not arm_mod:
@@ -147,17 +185,61 @@ class MESH_OT_clone_factory_final(bpy.types.Operator):
                 arm_mod.object = new_rig
                 
                 clean_obj_name = obj.name.split(".")[0]
-                obj.name = f"{PREFIX}_{clean_obj_name}_BAKED"
+                obj.name = f"{PREFIX}_{clean_obj_name}"
 
+        ### RECURSIVE SAFE CLEANUP ###
         orig_coll = bpy.data.collections.get("Master_Character_Collection")
         if orig_coll:
-            objs_to_delete = [o for o in orig_coll.objects]
-            for o in objs_to_delete:
-                bpy.data.objects.remove(o, do_unlink=True)
-            bpy.data.collections.remove(orig_coll)
-        
-        self.report({'INFO'}, f"Baked {PREFIX} successfully! Customizer reset.")
-        return {'FINISHED'}
+            # 1. Use a set to collect EVERY object in the collection AND its sub-collections
+            all_objs = set()
+            def get_all_children(col):
+                for obj in col.objects:
+                    all_objs.add(obj)
+                for child_col in col.children:
+                    get_all_children(child_col)
+            
+            get_all_children(orig_coll)
+            
+            # 2. Collect the data-blocks from every object found
+            data_to_delete = {o.data for o in all_objs if o.data}
+
+            # 3. Delete the Objects first
+            for o in all_objs:
+                try:
+                    bpy.data.objects.remove(o, do_unlink=True)
+                except:
+                    pass
+            
+            # 4. Delete the Data-Blocks (This frees the names like "Body")
+            for data in data_to_delete:
+                try:
+                    if data.users == 0:
+                        if isinstance(data, bpy.types.Mesh):
+                            bpy.data.meshes.remove(data)
+                        elif isinstance(data, bpy.types.Armature):
+                            bpy.data.armatures.remove(data)
+                except:
+                    pass
+
+            # 5. Delete the main collection and all its sub-collections
+            def delete_sub_collections(col):
+                for child in col.children:
+                    delete_sub_collections(child)
+                bpy.data.collections.remove(col)
+            
+            delete_sub_collections(orig_coll)
+
+        # 6. Final safety purge for materials/textures
+        bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+
+        # This switches your NEW baked rig (with the prefix) to Pose Mode
+        if new_rig:
+            new_rig.data.pose_position = 'POSE'
+            context.view_layer.objects.active = new_rig
+            new_rig.select_set(True)
+        context.view_layer.update()
+        self.report({'INFO'}, f"Baked {PREFIX} successfully!")
+        return {'FINISHED'} 
 
 # --- 3. UI PANEL ---
 class UI_PT_CharacterCustomizer(bpy.types.Panel):
@@ -168,7 +250,7 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
     bl_category = 'HyChar'
 
     def gv(self, mat_prefix, grp, sock):
-        obj = get_obj1()
+        obj = bpy.data.objects.get("Body")
         if not obj: return 0
         try:
             # Find the first slot where the material name starts with our prefix
@@ -183,17 +265,22 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
         except: return 0
 
     def mat_ui(self, layout, mat_prefix, grp, sock, text=""):
-        obj = get_obj1()
+        obj = bpy.data.objects.get("Body")
         if not obj: return
         try:
-            # Find the first slot where the material name starts with our prefix
+            # KEEPING YOUR LOGIC: Find slot where material name starts with prefix
             slot = next((s for s in obj.material_slots if s.material and s.material.name.startswith(mat_prefix)), None)
             if not slot: return
             
             node = slot.material.node_tree.nodes.get(grp)
             s = node.inputs.get(sock)
             prop = next((p for p in ["index", "value", "default_value", "enum_value"] if hasattr(s, p)), None)
-            if prop: layout.prop(s, prop, text=text if text else s.name)
+            
+            if prop:
+                # This split forces the 0.4 label ratio to match standard dropdowns
+                split = layout.split(factor=0.4)
+                split.label(text=text if text else s.name)
+                split.prop(s, prop, text="") # text="" prevents the double-label bug
         except: pass
 
     def draw(self, context):
@@ -201,13 +288,35 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
         scene = context.scene
         obj1 = get_obj1()
         obj2 = get_obj2()
+        obj3 = get_obj3()
+        obj4 = get_obj4()
+        obj5 = get_obj5()
+        obj6 = get_obj6()
+        obj7 = get_obj7()
+        obj8 = get_obj8()
+        obj9 = get_obj9()
+        obj10 = get_obj10()
+        obj11 = get_obj11()
+        obj12 = get_obj12()
         main_rig = bpy.data.objects.get("CharRig")
 
+        layout.operator("mesh.individual_bake", text="Bake Textures", icon='RENDER_STILL')
+        # Create a sub-layout that is grayed out and indented
+        sub = layout.column(align=True)
+        sub.active = False  # Makes the text gray/subtle
+        
+        row = sub.row()
+        row.label(text="", icon='BLANK1') # Empty icon/text for indentation
+        row.scale_x = 0.2                  # Shrink this spacer for slight indent
+        row.label(text="Finalizes Textures", icon='INFO')
+        
+        layout.separator()
         if not main_rig:
             col = layout.column(align=True)
             col.scale_y = 2.0
             col.operator("hychar.spawn_character", text="SPAWN CHARACTER", icon='APPEND_BLEND')
             return
+            
 
         if not obj1 or not obj2:
             layout.label(text="Meshes missing!", icon='ERROR')
@@ -215,32 +324,57 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
 
         gn1 = obj1.modifiers.get("GeometryNodes")
         gn2 = obj2.modifiers.get("GeometryNodes")
-
+        gn3 = obj3.modifiers.get("GeometryNodes")
+        gn4 = obj4.modifiers.get("GeometryNodes")
+        gn5 = obj5.modifiers.get("GeometryNodes")
+        gn6 = obj6.modifiers.get("GeometryNodes")
+        gn7 = obj7.modifiers.get("GeometryNodes")
+        gn8 = obj8.modifiers.get("GeometryNodes")
+        gn9 = obj9.modifiers.get("GeometryNodes")
+        gn10 = obj10.modifiers.get("GeometryNodes")
+        gn11 = obj11.modifiers.get("GeometryNodes")
+        gn12 = obj12.modifiers.get("GeometryNodes")
+        
+        standard_materials = {
+        "Faded Leather": "Faded Leather",
+        "Jean Generic": "Jean Generic",
+        "Colored Cotton": "Colored Cotton",
+        "Ornamented Metal": "Ornamented Metal",
+        "Fantasy Cotton": "Fantasy Cotton",
+        "Dark Fantasy Cotton": "Dark Fantasy Cotton",
+        "Pastel Cotton": "Pastel Cotton",
+        "Rotten Fabric": "Rotten Fabric",
+        "Flashy Synthetic": "Flashy Synthetic",
+        "Shiny Fabric": "Shiny Fabric"
+        }
         # --- GENERAL ---
         box = layout.box()
         box.prop(scene, "ui_show_general", text="GENERAL", 
                  icon='TRIA_DOWN' if scene.ui_show_general else 'TRIA_RIGHT', emboss=False)
         if scene.ui_show_general:
             col = box.column(align=True)
-            self.mat_ui(col, "Skin", "HySkin01", "Body Type", text="Body Type")
-            self.mat_ui(col, "Skin", "HySkin01", "Face Type", text="Face Type")
-            self.mat_ui(col, "Skin", "HySkin01", "Skintone", text="Skintone")
-            self.mat_ui(col, "Skin", "HySkin01", "Ears", text="Ears")
-            self.mat_ui(col, "Skin", "HySkin01", "Mouth Type", text="Mouth")
+            self.mat_ui(col, "Body", "HyBody", "Body Type", text="Body Type")
+            self.mat_ui(col, "Face", "HyFace", "Face Type", text="Face Type")
+            split = col.split(factor=0.4)
+            split.label(text="Skintone")
+            
+            split.prop(scene, "hy_skintone_master", text="")
+            self.mat_ui(col, "Ears", "HyEars", "Ears", text="Ears")
+            self.mat_ui(col, "Mouth", "HyMouth", "Mouth Type", text="Mouth")
             col.separator()
             col.label(text="EYES", icon='HIDE_OFF')
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_17", text="Skin")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_18", text="Style")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_19", text="  └ Color")
+            self.mat_ui(col, "Eyes", "HyEyes", "Skin", text="Skin")
+            self.mat_ui(col, "Eyes", "HyEyes", "Style", text="Style")
+            self.mat_ui(col, "Eyes", "HyEyes", "Eye Color", text="  └ Color")
             col.separator()
             col.label(text="EYE WHITES", icon='SHADING_RENDERED')
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_25", text="Skin")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_26", text="Style")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_27", text="  └ Color")
+            self.mat_ui(col, "EyeWhites", "HyEyeWhites", "Skin", text="Skin")
+            self.mat_ui(col, "EyeWhites", "HyEyeWhites", "Style", text="Style")
+            self.mat_ui(col, "EyeWhites", "HyEyeWhites", "Color", text="  └ Color")
             col.separator()
             col.label(text="UNDERWEAR", icon='MOD_CLOTH')
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_98", text="Underwear")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_99", text="  └ Color")
+            self.mat_ui(col, "Underwear", "HyUnderwear", "Underwear", text="Underwear")
+            self.mat_ui(col, "Underwear", "HyUnderwear", "Colored Cotton", text="  └ Color")
 
         # --- HEAD ---
         box = layout.box()
@@ -248,14 +382,18 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
                  icon='TRIA_DOWN' if scene.ui_show_head else 'TRIA_RIGHT', emboss=False)
         if scene.ui_show_head:
             col = box.column(align=True)
-            col.prop(gn1, '["Socket_2"]', text="Hair Style")
-            self.mat_ui(col, "Skin", "HySkin01", "Hair Color", text="  └ Color")
+            split = col.split(factor=0.4)
+            split.label(text="Hair")
+            split.prop(gn6, '["Socket_2"]', text="")
+            self.mat_ui(col, "Hair", "HyHair", "Hair Color", text="  └ Color")
             col.separator()
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_14", text="Eyebrows")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_15", text="  └ Brow Color")
+            self.mat_ui(col, "Eyebrows", "HyEyebrows", "Eyebrows", text="Eyebrows")
+            self.mat_ui(col, "Eyebrows", "HyEyebrows", "Brow Color", text="  └ Brow Color")
             col.separator()
-            col.prop(gn1, '["Socket_4"]', text="Beard Style")
-            self.mat_ui(col, "Skin", "HySkin01", "Beard Color", text="  └ Color")
+            split = col.split(factor=0.4)
+            split.label(text="Beard")
+            split.prop(gn1, '["Socket_4"]', text="")
+            self.mat_ui(col, "Beard", "HyBeard", "Beard Color", text="  └ Color")
 
         # --- ACCESSORIES ---
         box = layout.box()
@@ -263,30 +401,50 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
                  icon='TRIA_DOWN' if scene.ui_show_acc else 'TRIA_RIGHT', emboss=False)
         if scene.ui_show_acc:
             col = box.column(align=True)
-            col.prop(gn2, '["Socket_22"]', text="Head Accessory")
-            self.mat_ui(col, "Skin 2", "HySkin02", "Socket_50", text="  └ Material")
-            val_head = self.gv("Skin 2", "HySkin02", "Socket_50")
-            head_slots = {"Faded Leather": "Socket_51", "Jean Generic": "Socket_52", "Colored Cotton": "Socket_53", "Ornamented Metal": "Socket_54", "Fantasy Cotton": "Socket_55", "Dark Fantasy Cotton": "Socket_56", "Pastel Cotton": "Socket_57", "Rotten Fabric": "Socket_58", "Flashy Synthetic": "Socket_59", "Shiny Fabric": "Socket_60"}
-            if val_head in head_slots:
-                self.mat_ui(col.column(align=True), "Skin 2", "HySkin02", head_slots[val_head], text="      └ Color")
+            
+            split = col.split(factor=0.4)
+            split.label(text="Head Accessory")
+            split.prop(gn7, '["Socket_22"]', text="")
+            self.mat_ui(col, "HeadAcc", "HyHeadAcc", "Material Selection", text="  └ Material")
+            val_head = self.gv("HeadAcc", "HyHeadAcc", "Material Selection")
+            if val_head in standard_materials:
+                self.mat_ui(col.column(align=True), "HeadAcc", "HyHeadAcc", standard_materials[val_head], text="      └ Color")
+                
             col.separator()
-            col.prop(gn2, '["Socket_21"]', text="Face Accessory")
-            self.mat_ui(col, "Skin 2", "HySkin02", "Socket_38", text="  └ Material")
-            val_face = self.gv("Skin 2", "HySkin02", "Socket_38")
-            face_slots = {"Faded Leather": "Socket_39", "Jean Generic": "Socket_40", "Colored Cotton": "Socket_41", "Ornamented Metal": "Socket_42", "Fantasy Cotton": "Socket_43", "Dark Fantasy Cotton": "Socket_44", "Pastel Cotton": "Socket_45", "Rotten Fabric": "Socket_46", "Flashy Synthetic": "Socket_47", "Shiny Fabric": "Socket_48"}
-            if val_face in face_slots:
-                self.mat_ui(col.column(align=True), "Skin 2", "HySkin02", face_slots[val_face], text="      └ Color")
+            
+            split = col.split(factor=0.4)
+            split.label(text="Face Accessory")
+            split.prop(gn4, '["Socket_21"]', text="")
+            self.mat_ui(col, "FaceAcc", "HyFaceAcc", "Material Selection", text="  └ Material")
+            val_face = self.gv("FaceAcc", "HyFaceAcc", "Material Selection")
+            if val_face in standard_materials:
+                self.mat_ui(col.column(align=True), "FaceAcc", "HyFaceAcc", standard_materials[val_face], text="      └ Color")
             col.separator()
-            col.prop(gn2, '["Socket_19"]', text="Earrings")
-            col.prop(gn2, '["Socket_20"]', text="Side")
-            ear_choice = gn2["Socket_19"]
-            ear_mats = {1: "Ornamented Metal", 2: "Ornamented Metal", 3: "Color", 4: "Ornamented Metal", 5: "Color2"}
-            if ear_choice in ear_mats:
-                try:
-                    mat_ear = obj2.material_slots["Earrings"].material
-                    sock_ear = mat_ear.node_tree.nodes["HySkin03"].inputs.get(ear_mats[ear_choice])
-                    if sock_ear: col.prop(sock_ear, "default_value", text="  └ Color Tint")
-                except: pass
+            # --- Earrings Selection ---
+            split = col.split(factor=0.4)
+            split.label(text="Earrings")
+            split.prop(gn3, '["Socket_19"]', text="")
+            
+            split = col.split(factor=0.4)
+            split.label(text="Side")
+            split.prop(gn3, '["Socket_20"]', text="")
+
+            ear_choice = gn3["Socket_19"]
+            # Map choice to the arguments needed by mat_ui
+            # {index: (mat_prefix, grp, sock, label)}
+            ear_map = {
+                0: ("MetalEar", "HyMetalEar", "Ornamented Metal", "  └ Color"),
+                1: ("MetalEar", "HyMetalEar", "Ornamented Metal", "  └ Color"),
+                2: ("MetalEar", "HyMetalEar", "Ornamented Metal", "  └ Color"),
+                3: ("HoopsEar", "HyHoopsEar", "Menu", "  └ Color"),
+                4: ("MetalEar", "HyMetalEar", "Ornamented Metal", "  └ Color"),
+                5: ("SpiralEar", "HySpiralEar", "Menu", "  └ Color")
+            }
+
+            if ear_choice in ear_map:
+                m_prefix, g_name, s_name, ui_label = ear_map[ear_choice]
+                # Now we use your helper function!
+                self.mat_ui(col, m_prefix, g_name, s_name, text=ui_label)
 
         # --- BODY & CLOTHING ---
         box = layout.box()
@@ -295,71 +453,76 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
         if scene.ui_show_body:
             col = box.column(align=True)
 
-            # --- UNDERTOP (Skin 1 / HySkin01) ---
-            col.label(text="UNDERTOP", icon='MOD_CLOTH')
-            col.prop(gn1, '["Socket_13"]', text="Style")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_87", text="  └ Material Selection")
-            val_utop = self.gv("Skin", "HySkin01", "Socket_87")
-            utop_map = {"Faded Leather": "Socket_88", "Jean Generic": "Socket_89", "Colored Cotton": "Socket_90", "Ornamented Metal": "Socket_91", "Fantasy Cotton": "Socket_92", "Dark Fantasy Cotton": "Socket_93", "Pastel Cotton": "Socket_94", "Rotten Fabric": "Socket_95", "Flashy Synthetic": "Socket_96", "Shiny Fabric": "Socket_97"}
-            if val_utop in utop_map:
-                self.mat_ui(col.column(align=True), "Skin", "HySkin01", utop_map[val_utop], text="      └ Color")
+            # --- UNDERSHIRT ---
+            col.label(text="UNDERSHIRT", icon='MOD_CLOTH')
+            split = col.split(factor=0.4)
+            split.label(text="Style")
+            split.prop(gn12, '["Socket_4"]', text="")
+            self.mat_ui(col, "Undershirt", "HyUndershirt", "Material Selection", text="  └ Material")
+            val_utop = self.gv("Undershirt", "HyUndershirt", "Material Selection")
+            if val_utop in standard_materials:
+                self.mat_ui(col.column(align=True), "Undershirt", "HyUndershirt", standard_materials[val_utop], text="      └ Color")
 
             col.separator()
 
-            # --- OVERSHIRT (Skin 1 / HySkin01) ---
+            # --- OVERSHIRT ---
             col.label(text="OVERSHIRT", icon='MOD_CLOTH')
-            # Check your GN modifier for the Glove Toggle Socket - often Socket_14
-            col.prop(gn1, '["Socket_14"]', text="Style") 
-            self.mat_ui(col, "Skin 2", "HySkin02", "Socket_2", text="  └ Material Selection")
-            val_over = self.gv("Skin 2", "HySkin02", "Socket_2")
-            over_map = {"Faded Leather": "Socket_3", "Jean Generic": "Socket_4", "Colored Cotton": "Socket_5", "Ornamented Metal": "Socket_6", "Fantasy Cotton": "Socket_7", "Dark Fantasy Cotton": "Socket_8", "Pastel Cotton": "Socket_9", "Rotten Fabric": "Socket_10", "Flashy Synthetic": "Socket_11", "Shiny Fabric": "Socket_12"}
-            if val_over in over_map:
-                self.mat_ui(col.column(align=True), "Skin 2", "HySkin02", over_map[val_over], text="      └ Color")
+            split = col.split(factor=0.4)
+            split.label(text="Style")
+            split.prop(gn9, '["Socket_4"]', text="")
+            self.mat_ui(col, "Overshirt", "HyOvershirt", "Material Selection", text="  └ Material")
+            val_over = self.gv("Overshirt", "HyOvershirt", "Material Selection")
+            if val_over in standard_materials:
+                self.mat_ui(col.column(align=True), "Overshirt", "HyOvershirt", standard_materials[val_over], text="      └ Color")
             
             col.separator()
 
-            # --- GLOVES (Skin 2 / HySkin02) ---
+            # --- GLOVES ---
             col.label(text="GLOVES", icon='MOD_CLOTH')
-            col.prop(gn1, '["Socket_12"]', text="Style")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_75", text="  └ Material Selection")
-            val_glove = self.gv("Skin", "HySkin01", "Socket_75")
-            glove_map = {"Faded Leather": "Socket_76", "Jean Generic": "Socket_77", "Colored Cotton": "Socket_78", "Ornamented Metal": "Socket_79", "Fantasy Cotton": "Socket_80", "Dark Fantasy Cotton": "Socket_81", "Pastel Cotton": "Socket_82", "Rotten Fabric": "Socket_83", "Flashy Synthetic": "Socket_84", "Shiny Fabric": "Socket_85"}
-            if val_glove in glove_map:
-                self.mat_ui(col.column(align=True), "Skin", "HySkin01", glove_map[val_glove], text="      └ Color")
+            split = col.split(factor=0.4)
+            split.label(text="Style")
+            split.prop(gn5, '["Socket_4"]', text="")
+            self.mat_ui(col, "Gloves", "HyGloves", "Material Selection", text="  └ Material")
+            val_glove = self.gv("Gloves", "HyGloves", "Material Selection")
+            if val_glove in standard_materials:
+                self.mat_ui(col.column(align=True), "Gloves", "HyGloves", standard_materials[val_glove], text="      └ Color")
             
 
             col.separator()
 
-            # --- PANTS (Skin 1 / HySkin01) ---
+            # --- PANTS ---
             col.label(text="PANTS", icon='USER')
-            col.prop(gn1, '["Socket_5"]', text="Style")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_46", text="  └ Material Selection")
-            val_pants = self.gv("Skin", "HySkin01", "Socket_46")
-            pants_map = {"Faded Leather": "Socket_47", "Jean Generic": "Socket_48", "Colored Cotton": "Socket_49", "Ornamented Metal": "Socket_50", "Fantasy Cotton": "Socket_51", "Dark Fantasy Cotton": "Socket_52", "Pastel Cotton": "Socket_53", "Rotten Fabric": "Socket_54", "Flashy Synthetic": "Socket_55", "Shiny Fabric": "Socket_56"}
-            if val_pants in pants_map:
-                self.mat_ui(col.column(align=True), "Skin", "HySkin01", pants_map[val_pants], text="      └ Color")
+            split = col.split(factor=0.4)
+            split.label(text="Style")
+            split.prop(gn10, '["Socket_4"]', text="")
+            self.mat_ui(col, "Pants", "HyPants", "Material Selection", text="  └ Material")
+            val_pants = self.gv("Pants", "HyPants", "Material Selection")
+            if val_pants in standard_materials:
+                self.mat_ui(col.column(align=True), "Pants", "HyPants", standard_materials[val_pants], text="      └ Color")
 
             col.separator()
 
-            # --- OVERPANTS (Skin 1 / HySkin01) ---
+            # --- OVERPANTS ---
             col.label(text="OVERPANTS", icon='USER')
-            col.prop(gn1, '["Socket_11"]', text="Style")
-            self.mat_ui(col, "Skin", "HySkin01", "Socket_57", text="  └ Material Selection")
-            val_opants = self.gv("Skin", "HySkin01", "Socket_57")
-            opants_map = {"Faded Leather": "Socket_58", "Jean Generic": "Socket_59", "Colored Cotton": "Socket_60", "Ornamented Metal": "Socket_61", "Fantasy Cotton": "Socket_62", "Dark Fantasy Cotton": "Socket_63", "Pastel Cotton": "Socket_64", "Rotten Fabric": "Socket_65", "Flashy Synthetic": "Socket_66", "Shiny Fabric": "Socket_67"}
-            if val_opants in opants_map:
-                self.mat_ui(col.column(align=True), "Skin", "HySkin01", opants_map[val_opants], text="      └ Color")
+            split = col.split(factor=0.4)
+            split.label(text="Style")
+            split.prop(gn8, '["Socket_4"]', text="")
+            self.mat_ui(col, "Overpants", "HyOverpants", "Material Selection", text="  └ Material")
+            val_opants = self.gv("Overpants", "HyOverpants", "Material Selection")
+            if val_opants in standard_materials:
+                self.mat_ui(col.column(align=True), "Overpants", "HyOverpants", standard_materials[val_opants], text="      └ Color")
 
             col.separator()
 
-            # --- SHOES (Skin 2 / HySkin02) ---
+            # --- SHOES ---
             col.label(text="SHOES", icon='MOD_DYNAMICPAINT')
-            col.prop(gn2, '["Socket_15"]', text="Style")
-            self.mat_ui(col, "Skin 2", "HySkin02", "Socket_14", text="  └ Material Selection")
-            val_shoes = self.gv("Skin 2", "HySkin02", "Socket_14")
-            shoe_map = {"Faded Leather": "Socket_15", "Jean Generic": "Socket_16", "Colored Cotton": "Socket_17", "Ornamented Metal": "Socket_18", "Fantasy Cotton": "Socket_19", "Dark Fantasy Cotton": "Socket_20", "Pastel Cotton": "Socket_21", "Rotten Fabric": "Socket_22", "Flashy Synthetic": "Socket_23", "Shiny Fabric": "Socket_24"}
-            if val_shoes in shoe_map:
-                self.mat_ui(col.column(align=True), "Skin 2", "HySkin02", shoe_map[val_shoes], text="      └ Color")
+            split = col.split(factor=0.4)
+            split.label(text="Style")
+            split.prop(gn11, '["Socket_15"]', text="")
+            self.mat_ui(col, "Shoes", "HyShoes", "Material Selection", text="  └ Material")
+            val_shoes = self.gv("Shoes", "HyShoes", "Material Selection")
+            if val_shoes in standard_materials:
+                self.mat_ui(col.column(align=True), "Shoes", "HyShoes", standard_materials[val_shoes], text="      └ Color")
 
         # --- CAPE (Skin 2 / HySkin02) ---
         box = layout.box()
@@ -367,25 +530,75 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
                  icon='TRIA_DOWN' if scene.ui_show_cape else 'TRIA_RIGHT', emboss=False)
         if scene.ui_show_cape:
             col = box.column(align=True)
-            col.prop(gn2, '["Socket_17"]', text="Style")
-            col.prop(gn2, '["Socket_18"]', text="Neck")
-            self.mat_ui(col, "Skin 2", "HySkin02", "Socket_25", text="  └ Material Selection")
-            val_cape = self.gv("Skin 2", "HySkin02", "Socket_25")
-            cape_map = {"Faded Leather": "Socket_26", "Jean Generic": "Socket_27", "Colored Cotton": "Socket_28", "Ornamented Metal": "Socket_29", "Fantasy Cotton": "Socket_30", "Dark Fantasy Cotton": "Socket_31", "Pastel Cotton": "Socket_32", "Rotten Fabric": "Socket_33", "Flashy Synthetic": "Socket_34", "Shiny Fabric": "Socket_35"}
-            if val_cape in cape_map:
-                self.mat_ui(col.column(align=True), "Skin 2", "HySkin02", cape_map[val_cape], text="      └ Color")
+            split = col.split(factor=0.4)
+            split.label(text="Style")
+            split.prop(gn2, '["Socket_17"]', text="")
+            split = col.split(factor=0.4)
+            split.label(text="Neck")
+            split.prop(gn2, '["Socket_18"]', text="")
+            self.mat_ui(col, "Cape", "HyCape", "Material Selection", text="  └ Material")
+            val_cape = self.gv("Cape", "HyCape", "Material Selection")
+            if val_cape in standard_materials:
+                self.mat_ui(col.column(align=True), "Cape", "HyCape", standard_materials[val_cape], text="      └ Color")
 
         # --- FOOTER ---
         layout.separator(factor=2.0)
         export_box = layout.box()
-        export_box.label(text="Export Final Character", icon='EXPORT')
-        export_box.prop(scene, "custom_rig_prefix", text="Rig Prefix")
-        export_box.label(text="Note: Bake resets rig to Rest Pose", icon='INFO')
-        export_box.operator("mesh.clone_factory_final", text="BAKE FULL CHARACTER", icon='DUPLICATE')
-        layout.label(text="HyChar v1.0 | Created by DxF")
+        export_box.label(text="Finalize Character", icon='EXPORT')
+        export_box.prop(scene, "custom_rig_prefix", text="Char Name:")
+        
+        export_box.operator("mesh.clone_factory_final", text="APPLY TO CHARACTER", icon='DUPLICATE')
+        export_box.label(text="Note: Creates Single User Materials", icon='INFO')
+        export_box.label(text="Colors Still Accessible in Shaders")
+        layout.label(text="HyChar v1.0.4 | Created by DxF")
 
+def update_hy_skintone(self, context):
+    # Convert the slider integer to a string to avoid the Enum error
+    val_str = str(self.hy_skintone_master)
+    
+    obj = bpy.data.objects.get("Body") or context.active_object
+    if not obj or obj.type != 'MESH':
+        return
+
+    sync_map = {
+        "Body": "HyBody",
+        "Ears": "HyEars",
+        "Mouth": "HyMouth",
+        "Face": "HyFace"
+    }
+
+    for slot in obj.material_slots:
+        if not slot.material or not slot.material.use_nodes:
+            continue
+            
+        mat = slot.material
+        for prefix, group_name in sync_map.items():
+            if mat.name.startswith(prefix):
+                node = mat.node_tree.nodes.get(group_name)
+                if node:
+                    sk_input = node.inputs.get("Skintone")
+                    if not sk_input:
+                        sk_input = node.inputs[0]
+                        
+                    if sk_input:
+                        try:
+                            # Try setting it as a string first (for Enums)
+                            sk_input.default_value = val_str
+                        except TypeError:
+                            # Fallback to int if that specific socket actually is a number
+                            sk_input.default_value = self.hy_skintone_master
+    
+    # Refresh viewport to show the change
+    for area in context.screen.areas:
+        if area.type == 'VIEW_3D':
+            area.tag_redraw()
 # --- 4. REGISTRATION ---
-classes = (HYCHAR_OT_spawn_character, MESH_OT_clone_factory_final, UI_PT_CharacterCustomizer)
+classes = (
+    HYCHAR_OT_spawn_character, 
+    MESH_OT_clone_factory_final, 
+    UI_PT_CharacterCustomizer, 
+    bake_logic.MESH_OT_individual_bake
+)
 
 def register():
     for cls in classes: bpy.utils.register_class(cls)
@@ -395,6 +608,13 @@ def register():
     bpy.types.Scene.ui_show_body = bpy.props.BoolProperty(default=False)
     bpy.types.Scene.ui_show_cape = bpy.props.BoolProperty(default=False)
     bpy.types.Scene.custom_rig_prefix = bpy.props.StringProperty(name="Prefix", default="NewChar")
+    bpy.types.Scene.hy_skintone_master = bpy.props.IntProperty(
+    name="Master Skintone",
+    min=1,
+    max=49,
+    default=4,
+    update=update_hy_skintone
+    )
 
 def unregister():
     for cls in reversed(classes): bpy.utils.unregister_class(cls)
@@ -404,6 +624,8 @@ def unregister():
     del bpy.types.Scene.ui_show_body
     del bpy.types.Scene.ui_show_cape
     del bpy.types.Scene.custom_rig_prefix
+    del bpy.types.Scene.hy_skintone_master
+    
 
 if __name__ == "__main__":
     register()
