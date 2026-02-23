@@ -6,7 +6,7 @@ if "bake_logic" in locals():
 else:
     from . import bake_logic
 
-ADDON_DIR = os.path.dirname(__file__)
+ADDON_DIR = os.path.dirname(os.path.abspath(__file__))
 LIB_PATH = os.path.join(ADDON_DIR, "resources", "CharLibrary.blend")
 
 # --- GET GN OBJ ---
@@ -42,11 +42,15 @@ class HYCHAR_OT_spawn_character(bpy.types.Operator):
     bl_description = "Appends character from the internal addon library folder"
 
     def execute(self, context):
-        addon_dir = os.path.dirname(__file__)
-        filepath = os.path.join(addon_dir, "resources", "CharLibrary.blend")
+        # 1. Force absolute path
+        filepath = LIB_PATH
         
+        # 2. Debug print
+        print(f"HyChar Debug: Looking for library at {filepath}")
+
         if not os.path.exists(filepath):
-            self.report({'ERROR'}, f"Library missing at: {filepath}")
+            # 3. Error Message
+            self.report({'ERROR'}, f"File not found: {os.path.basename(filepath)}. Check console for full path.")
             return {'CANCELLED'}
 
         coll_name = "Master_Character_Collection"
@@ -550,7 +554,7 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
         export_box.operator("mesh.clone_factory_final", text="APPLY TO CHARACTER", icon='DUPLICATE')
         export_box.label(text="Note: Creates Single User Materials", icon='INFO')
         export_box.label(text="Colors Still Accessible in Shaders")
-        layout.label(text="HyChar v1.0.4 | Created by DxF")
+        layout.label(text="HyChar v1.0.5 | Created by DxF")
 
 def update_hy_skintone(self, context):
     # Convert the slider integer to a string to avoid the Enum error
