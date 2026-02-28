@@ -1,4 +1,4 @@
-# HyChar
+# HyTailor
   Spawn, Customize, and Bake Rigged Characters from Hytale!
 
 🛠 Installation (Blender 5.0+)  
