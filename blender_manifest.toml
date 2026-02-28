@@ -1,8 +1,8 @@
-schema_version = "1.0.5"
+schema_version = "1.0.6"
 
 id = "hychar_customizer"
-version = "1.0.5"
-name = "HyChar"
+version = "1.0.6"
+name = "HyTailor"
 tagline = "Spawn, Customize, and Bake Rigged Characters from Hytale!"
 maintainer = "Drew Lowry"
 type = "add-on"

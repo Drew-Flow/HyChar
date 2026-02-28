@@ -46,7 +46,7 @@ class HYCHAR_OT_spawn_character(bpy.types.Operator):
         filepath = LIB_PATH
         
         # 2. Debug print
-        print(f"HyChar Debug: Looking for library at {filepath}")
+        print(f"HyTailor Debug: Looking for library at {filepath}")
 
         if not os.path.exists(filepath):
             # 3. Error Message
@@ -247,11 +247,11 @@ class MESH_OT_clone_factory_final(bpy.types.Operator):
 
 # --- 3. UI PANEL ---
 class UI_PT_CharacterCustomizer(bpy.types.Panel):
-    bl_label = "HyChar Customizer"
+    bl_label = "HyTailor Customizer"
     bl_idname = "UI_PT_character_customizer"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'HyChar'
+    bl_category = 'HyTailor'
 
     def gv(self, mat_prefix, grp, sock):
         obj = bpy.data.objects.get("Body")
@@ -554,7 +554,7 @@ class UI_PT_CharacterCustomizer(bpy.types.Panel):
         export_box.operator("mesh.clone_factory_final", text="APPLY TO CHARACTER", icon='DUPLICATE')
         export_box.label(text="Note: Creates Single User Materials", icon='INFO')
         export_box.label(text="Colors Still Accessible in Shaders")
-        layout.label(text="HyChar v1.0.5 | Created by DxF")
+        layout.label(text="HyTailor v1.0.6 | Created by DxF")
 
 def update_hy_skintone(self, context):
     # Convert the slider integer to a string to avoid the Enum error
