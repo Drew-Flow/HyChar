@@ -9,7 +9,7 @@
   Click the Arrow Icon (⌄) in the top-right corner of the window.  
   Select Install from Disk  
   Navigate to your HyTailor.zip file and click Install.  
-  The addon will now appear in your 3D Viewport Sidebar (N-Panel) under the 'HyChar' tab.  
+  The addon will now appear in your 3D Viewport Sidebar (N-Panel) under the 'HyTailor' tab.  
 
 🚀 How to Use  
  [YouTube Tutorial](https://youtu.be/p-X_mLLkMKw)  
